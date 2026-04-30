@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+venv/
+.venv/
+
+# 环境变量
+.env
+.env.local
+
+# 日志
+logs/
+*.log
+
+# 备份
+backup/*.sql
+backup/*.dump
+
+# SSL证书
+ssl/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+frontend/dist/
+.nuxt/
+
+# Docker
+.docker/
