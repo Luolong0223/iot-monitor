@@ -1,8 +1,8 @@
-# 贵阳燃气外围数据采集管理平台
+# 工业数据采集管理平台
 
 ## 项目简介
 
-覆盖贵州省多个地级市的燃气数据采集管理平台，支持1000+数据点位接入，提供实时监控、历史查询、告警管理、报表导出等完整功能。
+覆盖某省多个地级市的工业数据采集管理平台，支持1000+数据点位接入，提供实时监控、历史查询、告警管理、报表导出等完整功能。
 
 ## 技术栈
 
@@ -27,7 +27,7 @@
 
 ```bash
 # 1. 克隆项目
-cd gas-monitor
+cd industrial-monitor
 
 # 2. 复制环境变量并修改
 cp .env.example .env
@@ -52,7 +52,7 @@ bash scripts/init.sh
 ## 项目结构
 
 ```
-gas-monitor/
+industrial-monitor/
 ├── docker-compose.yml          # Docker编排
 ├── .env.example                # 环境变量模板
 ├── nginx/nginx.conf            # Nginx配置

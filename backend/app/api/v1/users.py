@@ -138,14 +138,14 @@ async def reset_password(
     current_user: User = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """重置密码（默认密码：Gas@123456）"""
+    """重置密码（默认密码：IoT@123456）"""
     user = await db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    user.password_hash = hash_password("Gas@123456")
+    user.password_hash = hash_password("IoT@123456")
     user.login_attempts = 0
     user.locked_until = None
     await db.commit()
 
-    return ResponseModel(message="密码已重置为 Gas@123456")
+    return ResponseModel(message="密码已重置为 IoT@123456")

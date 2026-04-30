@@ -14,7 +14,7 @@ services:
       - backend
     restart: always
     networks:
-      - gas-net
+      - iot-net
 
   backend:
     build: ./backend
@@ -36,7 +36,7 @@ services:
         condition: service_started
     restart: always
     networks:
-      - gas-net
+      - iot-net
 
   emqx:
     image: emqx/emqx:5
@@ -50,7 +50,7 @@ services:
       - emqx_log:/opt/emqx/log
     restart: always
     networks:
-      - gas-net
+      - iot-net
 
   tdengine:
     image: tdengine/tdengine:3
@@ -61,14 +61,14 @@ services:
       - tdengine_data:/var/lib/taos
     restart: always
     networks:
-      - gas-net
+      - iot-net
 
   postgres:
     image: postgres:16
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-gas_db}
+      POSTGRES_DB: ${POSTGRES_DB:-iot_db}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
     volumes:
@@ -81,7 +81,7 @@ services:
       retries: 5
     restart: always
     networks:
-      - gas-net
+      - iot-net
 
   redis:
     image: redis:7-alpine
@@ -91,7 +91,7 @@ services:
       - redis_data:/data
     restart: always
     networks:
-      - gas-net
+      - iot-net
 
 volumes:
   emqx_data:
@@ -101,5 +101,5 @@ volumes:
   redis_data:
 
 networks:
-  gas-net:
+  iot-net:
     driver: bridge

@@ -10,14 +10,14 @@ class Settings(BaseSettings):
     # PostgreSQL
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
-    POSTGRES_DB: str = "gas_db"
+    POSTGRES_DB: str = "iot_db"
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "change_me_in_production"
 
     # TDengine
     TDENGINE_HOST: str = "localhost"
     TDENGINE_PORT: int = 6030
-    TDENGINE_DB: str = "gas_data"
+    TDENGINE_DB: str = "iot_data"
     TDENGINE_KEEP_DAYS: int = 365
 
     # Redis
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     TCP_PORT: int = 9000
 
     # 系统
-    SYSTEM_NAME: str = "贵阳燃气外围数据采集管理平台"
+    SYSTEM_NAME: str = "工业数据采集管理平台"
     LOG_LEVEL: str = "info"
     DEBUG: bool = False
 

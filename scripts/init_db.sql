@@ -1,12 +1,12 @@
 -- ============================================
--- 贵阳燃气数据采集管理平台 - 数据库初始化脚本
+-- 工业数据采集管理平台 - 数据库初始化脚本
 -- ============================================
 
 -- 创建TDengine数据库和超级表
 -- 注意：需要在TDengine中执行
 
--- CREATE DATABASE gas_data KEEP 365 DAYS 10 BLOCKS 6 WAL_LEVEL 2;
--- USE gas_data;
+-- CREATE DATABASE iot_data KEEP 365 DAYS 10 BLOCKS 6 WAL_LEVEL 2;
+-- USE iot_data;
 --
 -- CREATE STABLE sensor_data (
 --     ts      TIMESTAMP,
@@ -65,7 +65,7 @@ INSERT INTO protocol_templates (template_name, description, protocol_type, frame
     "byte_order": "big_endian",
     "checksum_type": "crc16"
  }'::jsonb, true),
-('自定义帧-燃气表', '适用于常见燃气表数据采集的自定义帧格式', 'custom_frame',
+('自定义帧-采集终端', '适用于常见采集终端数据采集的自定义帧格式', 'custom_frame',
  '{
     "header": "AA 55",
     "length_type": "dynamic",

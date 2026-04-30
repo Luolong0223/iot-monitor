@@ -5,7 +5,7 @@
 
 set -e
 
-echo "=== 贵阳燃气数据采集管理平台 - 初始化 ==="
+echo "=== 工业数据采集管理平台 - 初始化 ==="
 
 # 1. 复制环境变量
 if [ ! -f .env ]; then
@@ -29,7 +29,7 @@ sleep 10
 
 # 5. 执行初始化SQL
 echo "📦 执行数据库初始化..."
-docker compose exec -T postgres psql -U postgres -d gas_db -f /backup/init_db.sql 2>/dev/null || echo "⚠️  初始化SQL执行失败，请手动执行"
+docker compose exec -T postgres psql -U postgres -d iot_db -f /backup/init_db.sql 2>/dev/null || echo "⚠️  初始化SQL执行失败，请手动执行"
 
 # 6. 创建默认管理员
 echo "👤 创建默认管理员账号..."

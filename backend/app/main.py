@@ -17,7 +17,7 @@ logging.basicConfig(
     format="[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
-logger = logging.getLogger("gas-monitor")
+logger = logging.getLogger("industrial-monitor")
 
 
 @asynccontextmanager
@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.SYSTEM_NAME,
     version="1.0.0",
-    description="贵阳燃气外围数据采集管理平台 API",
+    description="工业数据采集管理平台 API",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     lifespan=lifespan,
