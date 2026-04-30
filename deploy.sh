@@ -2,14 +2,14 @@
 # ============================================================
 #  IoT-Monitor 一键部署脚本 (CentOS Stream 10)
 #
-#  使用: sudo bash deploy.sh
+#  使用: sudo -E DB_PASS=xxx ADMIN_PASS=xxx bash deploy.sh
 #
 #  功能:
-#    1. 安装系统依赖
-#    2. 安装并配置 PostgreSQL
-#    3. 安装并配置 TDengine
-#    4. 安装并配置 Redis
-#    5. 安装并配置 EMQX (MQTT Broker)
+#    1. 安装系统依赖 + Docker
+#    2. 安装并配置 PostgreSQL (dnf)
+#    3. 安装并配置 TDengine (Docker)
+#    4. 安装并配置 Redis (Docker)
+#    5. 安装并配置 EMQX (Docker)
 #    6. 部署后端应用
 #    7. 配置 Systemd 服务
 #    8. 配置 Nginx 反向代理
@@ -56,13 +56,26 @@ check_os() {
     ok "系统检查通过"
 }
 
-# ============ 1. 系统基础 ============
+# ============ 1. 系统基础 + Docker ============
 setup_system() {
     info "配置系统基础环境..."
 
-    dnf update -y -q
+    dnf update -y -q 2>/dev/null || true
     dnf install -y -q wget curl git vim tar gcc gcc-c++ make \
-        epel-release yum-utils policycoreutils-python-utils
+        epel-release yum-utils policycoreutils-python-utils 2>/dev/null || true
+
+    # 安装 Docker
+    if ! command -v docker &>/dev/null; then
+        info "安装 Docker..."
+        dnf install -y -q dnf-plugins-core 2>/dev/null || true
+        dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo 2>/dev/null || true
+        dnf install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || \
+            dnf install -y -q docker docker-compose 2>/dev/null || true
+        systemctl enable --now docker
+        ok "Docker 安装完成"
+    else
+        ok "Docker 已安装"
+    fi
 
     # 防火墙
     if systemctl is-active --quiet firewalld; then
@@ -120,69 +133,67 @@ setup_postgresql() {
     ok "PostgreSQL 安装完成 (密码: ${DB_PASS})"
 }
 
-# ============ 3. TDengine ============
+# ============ 3. TDengine (Docker) ============
 setup_tdengine() {
-    info "安装 TDengine..."
+    info "安装 TDengine (Docker)..."
 
-    if ! command -v taosd &>/dev/null; then
-        # CentOS Stream 10 使用 el/9 兼容包
-        TDENGINE_VER="3.3.4.3"
-        TDENGINE_RPM="TDengine-server-${TDENGINE_VER}-x86_64.rpm"
-        if [ ! -f "/tmp/${TDENGINE_RPM}" ]; then
-            wget -q -O "/tmp/${TDENGINE_RPM}" \
-                "https://www.taosdata.com/assets-download/3.0/${TDENGINE_RPM}" 2>/dev/null || \
-                warn "TDengine 下载失败，请手动安装: https://docs.taosdata.com/get-started/"
-        fi
-        if [ -f "/tmp/${TDENGINE_RPM}" ]; then
-            rpm -ivh "/tmp/${TDENGINE_RPM}" 2>/dev/null || true
-        fi
-    fi
+    # 启动 TDengine 容器
+    docker rm -f tdengine 2>/dev/null || true
+    docker run -d --name tdengine --restart always \
+        -p 6030:6030 -p 6041:6041 \
+        -v tdengine_data:/var/lib/taos \
+        tdengine/tdengine:3
 
-    systemctl enable --now taosd 2>/dev/null || true
-    systemctl enable --now taosadapter 2>/dev/null || true
+    # 等待 TDengine 就绪
+    info "等待 TDengine 启动..."
+    sleep 8
 
     # 创建数据库
-    sleep 3
-    taos -s "CREATE DATABASE IF NOT EXISTS ${TDENGINE_DB} KEEP 365 DURATION 30 BUFFER 16 WAL_LEVEL 1 PRECISION 'ms';" 2>/dev/null || \
+    docker exec tdengine taos -s "CREATE DATABASE IF NOT EXISTS ${TDENGINE_DB} KEEP 365 DURATION 30 BUFFER 16 WAL_LEVEL 1 PRECISION 'ms';" || \
         warn "TDengine 数据库创建失败，稍后由应用自动创建"
 
-    ok "TDengine 安装完成"
+    ok "TDengine 安装完成 (Docker)"
 }
 
-# ============ 4. Redis ============
+# ============ 4. Redis (Docker) ============
 setup_redis() {
-    info "安装 Redis..."
+    info "安装 Redis (Docker)..."
 
-    dnf install -y -q redis
-    systemctl enable --now redis
+    docker rm -f redis 2>/dev/null || true
+    docker run -d --name redis --restart always \
+        -p 6379:6379 \
+        -v redis_data:/data \
+        redis:7-alpine
 
-    redis-cli ping | grep -q PONG || warn "Redis 启动异常"
-    ok "Redis 安装完成"
+    sleep 3
+    docker exec redis redis-cli ping | grep -q PONG || warn "Redis 启动异常"
+
+    ok "Redis 安装完成 (Docker)"
 }
 
-# ============ 5. EMQX ============
+# ============ 5. EMQX (Docker) ============
 setup_emqx() {
-    info "安装 EMQX..."
+    info "安装 EMQX (Docker)..."
 
-    if ! command -v emqx &>/dev/null; then
-        # CentOS Stream 10 使用 el/9 兼容仓库
-        cat > /etc/yum.repos.d/emqx.repo <<'REPO'
-[emqx]
-name=emqx
-baseurl=https://repos.emqx.io/emqx-ce/rpm/el/9/$basearch
-enabled=1
-gpgcheck=0
-REPO
-        dnf install -y -q emqx 2>/dev/null || warn "EMQX 安装失败，请手动安装: https://www.emqx.io/docs/en/latest/deploy/install.html"
-    fi
-
-    systemctl enable --now emqx 2>/dev/null || true
+    docker rm -f emqx 2>/dev/null || true
+    docker run -d --name emqx --restart always \
+        -p 1883:1883 -p 8083:8083 -p 8883:8883 -p 18083:18083 \
+        -v emqx_data:/opt/emqx/data \
+        emqx/emqx:5
 
     # 等待 EMQX 启动
-    sleep 8
+    info "等待 EMQX 启动..."
+    sleep 10
 
     # 通过 REST API 创建 MQTT 用户 (EMQX 5.x)
     if curl -s http://localhost:18083/api/v5/status >/dev/null 2>&1; then
+        # 添加认证方式（密码内置数据库）
+        curl -s -X POST "http://localhost:18083/api/v5/authentication" \
+            -u "admin:public" \
+            -H "Content-Type: application/json" \
+            -d '{"mechanism":"password_based","backend":"built_in_database","password_hash_algorithm":{"name":"sha256","salt_position":"suffix"}}' 2>/dev/null || true
+        sleep 2
+        # 创建 MQTT 用户
         curl -s -X POST "http://localhost:18083/api/v5/authentication/password_based:built_in_database/users" \
             -u "admin:public" \
             -H "Content-Type: application/json" \
@@ -192,17 +203,16 @@ REPO
             -u "admin:public" \
             -H "Content-Type: application/json" \
             -d "{\"password\":\"${MQTT_PASS}\"}" 2>/dev/null || true
+        ok "EMQX 安装完成 (MQTT用户: ${MQTT_USER})"
+    else
+        warn "EMQX 启动超时，请手动检查"
     fi
-
-    ok "EMQX 安装完成 (MQTT用户: ${MQTT_USER})"
 }
 
 # ============ 6. Python 环境 ============
 setup_python() {
     info "安装 Python 环境..."
 
-    # CentOS Stream 10 自带 Python 3.12+
-    # 优先尝试安装 python3.11，失败则使用系统自带的 python3
     dnf install -y -q python3 python3-devel python3-pip 2>/dev/null
 
     PYTHON_CMD="python3"
@@ -223,7 +233,7 @@ deploy_app() {
     # 克隆代码
     if [ -d "${APP_DIR}" ]; then
         cd "${APP_DIR}"
-        git pull origin master
+        git pull origin master 2>/dev/null || true
     else
         git clone https://github.com/Luolong0223/iot-monitor.git "${APP_DIR}"
         cd "${APP_DIR}"
@@ -303,7 +313,6 @@ init_database() {
     cd "${APP_DIR}/backend"
     source venv/bin/activate
 
-    # 设置环境变量供 init_db.py 使用
     export ADMIN_PASS="${ADMIN_PASS}"
     python init_db.py
 
@@ -317,8 +326,8 @@ setup_systemd() {
     cat > /etc/systemd/system/iot-monitor.service <<EOF
 [Unit]
 Description=IoT Monitor Backend
-After=network.target postgresql.service taosd.service redis.service emqx.service
-Wants=postgresql.service taosd.service redis.service emqx.service
+After=network.target postgresql.service docker.service
+Wants=postgresql.service docker.service
 
 [Service]
 Type=exec
@@ -354,8 +363,15 @@ server {
 
     client_max_body_size 50m;
 
-    # API 代理
+    # 前端静态资源
     location / {
+        root /usr/share/nginx/html;
+        index index.html;
+        try_files \$uri \$uri/ /index.html;
+    }
+
+    # API 代理
+    location /api/ {
         proxy_pass http://127.0.0.1:8000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -363,6 +379,15 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_read_timeout 300;
         proxy_connect_timeout 60;
+    }
+
+    # 登录接口限流
+    limit_req_zone \$binary_remote_addr zone=login:10m rate=5r/m;
+    location /api/v1/auth/login {
+        limit_req zone=login burst=3 nodelay;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
     }
 
     # WebSocket 代理
@@ -375,9 +400,13 @@ server {
         proxy_read_timeout 86400;
     }
 
+    # 健康检查
+    location /health {
+        proxy_pass http://127.0.0.1:8000;
+    }
+
     # 静态文件缓存
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf)$ {
-        proxy_pass http://127.0.0.1:8000;
         expires 7d;
         add_header Cache-Control "public, immutable";
     }
@@ -394,12 +423,12 @@ start_services() {
     info "启动所有服务..."
 
     systemctl restart postgresql
-    systemctl restart taosd 2>/dev/null || true
-    systemctl restart redis
-    systemctl restart emqx 2>/dev/null || true
-    sleep 3
+    sleep 2
     systemctl start iot-monitor
     systemctl restart nginx
+
+    # 确认 Docker 容器运行状态
+    docker start tdengine redis emqx 2>/dev/null || true
 
     ok "所有服务已启动"
 }
@@ -412,6 +441,7 @@ print_summary() {
     echo "============================================================"
     echo ""
     echo "  📌 访问地址:"
+    echo "     前端页面: http://${DOMAIN}"
     echo "     API 文档: http://${DOMAIN}/api/docs"
     echo "     健康检查: http://${DOMAIN}/health"
     echo ""
@@ -422,9 +452,10 @@ print_summary() {
     echo ""
     echo "  📊 服务信息:"
     echo "     PostgreSQL: localhost:5432 (${DB_NAME})"
-    echo "     TDengine:   localhost:6030 (${TDENGINE_DB})"
-    echo "     Redis:      localhost:6379"
-    echo "     EMQX MQTT:  localhost:1883"
+    echo "     TDengine:   localhost:6030 (${TDENGINE_DB}) [Docker]"
+    echo "     Redis:      localhost:6379 [Docker]"
+    echo "     EMQX MQTT:  localhost:1883 [Docker]"
+    echo "     EMQX 管理:  http://localhost:18083 (${MQTT_USER}/${MQTT_PASS})"
     echo "     TCP Server: 0.0.0.0:9000"
     echo ""
     echo "  🔑 数据库密码: ${DB_PASS}"
@@ -434,9 +465,12 @@ print_summary() {
     echo "  ⚠️  请妥善保管以上密码信息!"
     echo ""
     echo "  📖 常用命令:"
-    echo "     查看状态: systemctl status iot-monitor"
-    echo "     查看日志: journalctl -u iot-monitor -f"
-    echo "     重启服务: systemctl restart iot-monitor"
+    echo "     查看后端状态: systemctl status iot-monitor"
+    echo "     查看后端日志: journalctl -u iot-monitor -f"
+    echo "     重启后端:     systemctl restart iot-monitor"
+    echo "     Docker 容器:  docker ps"
+    echo "     查看 TDengine: docker logs tdengine"
+    echo "     查看 EMQX:    docker logs emqx"
     echo ""
     echo "============================================================"
 }
@@ -467,5 +501,5 @@ main() {
 }
 
 # 允许通过环境变量覆盖配置
-# DB_PASS=xxx ADMIN_PASS=xxx DOMAIN=xxx sudo -E bash deploy.sh
+# sudo -E DB_PASS=xxx ADMIN_PASS=xxx DOMAIN=xxx bash deploy.sh
 main "$@"
