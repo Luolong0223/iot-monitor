@@ -125,11 +125,13 @@ setup_tdengine() {
     info "安装 TDengine..."
 
     if ! command -v taosd &>/dev/null; then
-        TDENGINE_RPM="TDengine-server-3.3.4.3-x86_64.rpm"
+        # CentOS Stream 10 使用 el/9 兼容包
+        TDENGINE_VER="3.3.4.3"
+        TDENGINE_RPM="TDengine-server-${TDENGINE_VER}-x86_64.rpm"
         if [ ! -f "/tmp/${TDENGINE_RPM}" ]; then
             wget -q -O "/tmp/${TDENGINE_RPM}" \
-                "https://www.taosdata.com/assets-download/3.0/${TDENGINE_RPM}" || \
-                warn "TDengine 下载失败，请手动安装"
+                "https://www.taosdata.com/assets-download/3.0/${TDENGINE_RPM}" 2>/dev/null || \
+                warn "TDengine 下载失败，请手动安装: https://docs.taosdata.com/get-started/"
         fi
         if [ -f "/tmp/${TDENGINE_RPM}" ]; then
             rpm -ivh "/tmp/${TDENGINE_RPM}" 2>/dev/null || true
@@ -140,7 +142,7 @@ setup_tdengine() {
     systemctl enable --now taosadapter 2>/dev/null || true
 
     # 创建数据库
-    sleep 2
+    sleep 3
     taos -s "CREATE DATABASE IF NOT EXISTS ${TDENGINE_DB} KEEP 365 DURATION 30 BUFFER 16 WAL_LEVEL 1 PRECISION 'ms';" 2>/dev/null || \
         warn "TDengine 数据库创建失败，稍后由应用自动创建"
 
@@ -163,6 +165,7 @@ setup_emqx() {
     info "安装 EMQX..."
 
     if ! command -v emqx &>/dev/null; then
+        # CentOS Stream 10 使用 el/9 兼容仓库
         cat > /etc/yum.repos.d/emqx.repo <<'REPO'
 [emqx]
 name=emqx
@@ -170,17 +173,25 @@ baseurl=https://repos.emqx.io/emqx-ce/rpm/el/9/$basearch
 enabled=1
 gpgcheck=0
 REPO
-        dnf install -y -q emqx 2>/dev/null || warn "EMQX 安装失败，请手动安装"
+        dnf install -y -q emqx 2>/dev/null || warn "EMQX 安装失败，请手动安装: https://www.emqx.io/docs/en/latest/deploy/install.html"
     fi
 
     systemctl enable --now emqx 2>/dev/null || true
 
     # 等待 EMQX 启动
-    sleep 5
+    sleep 8
 
-    # 创建 MQTT 用户
-    if command -v emqx_ctl &>/dev/null; then
-        emqx_ctl users add ${MQTT_USER} ${MQTT_PASS} 2>/dev/null || true
+    # 通过 REST API 创建 MQTT 用户 (EMQX 5.x)
+    if curl -s http://localhost:18083/api/v5/status >/dev/null 2>&1; then
+        curl -s -X POST "http://localhost:18083/api/v5/authentication/password_based:built_in_database/users" \
+            -u "admin:public" \
+            -H "Content-Type: application/json" \
+            -d "{\"user_id\":\"${MQTT_USER}\",\"password\":\"${MQTT_PASS}\"}" 2>/dev/null || true
+        # 修改 admin 默认密码
+        curl -s -X PUT "http://localhost:18083/api/v5/users/admin" \
+            -u "admin:public" \
+            -H "Content-Type: application/json" \
+            -d "{\"password\":\"${MQTT_PASS}\"}" 2>/dev/null || true
     fi
 
     ok "EMQX 安装完成 (MQTT用户: ${MQTT_USER})"
@@ -190,11 +201,17 @@ REPO
 setup_python() {
     info "安装 Python 环境..."
 
-    dnf install -y -q python3.11 python3.11-devel python3-pip 2>/dev/null || \
-        dnf install -y -q python3 python3-devel python3-pip
+    # CentOS Stream 10 自带 Python 3.12+
+    # 优先尝试安装 python3.11，失败则使用系统自带的 python3
+    dnf install -y -q python3 python3-devel python3-pip 2>/dev/null
 
-    PYTHON_CMD="python3.11"
-    command -v python3.11 &>/dev/null || PYTHON_CMD="python3"
+    PYTHON_CMD="python3"
+    PY_VER=$(${PYTHON_CMD} --version 2>&1 | grep -oP '\d+\.\d+')
+    info "检测到 Python 版本: ${PY_VER}"
+
+    # 确保 venv 模块可用
+    dnf install -y -q python3-virtualenv 2>/dev/null || \
+        ${PYTHON_CMD} -m ensurepip 2>/dev/null || true
 
     ok "Python 安装完成 ($(${PYTHON_CMD} --version))"
 }
