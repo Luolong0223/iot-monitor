@@ -9,6 +9,7 @@ import time
 from app.config import settings
 from app.database import init_db, close_db
 from app.api.v1 import api_router
+from app.api.v1.websocket import router as ws_router
 
 
 # 日志配置
@@ -24,14 +25,61 @@ logger = logging.getLogger("industrial-monitor")
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     logger.info(f"🚀 {settings.SYSTEM_NAME} 启动中...")
+
+    # 初始化数据库
     await init_db()
     logger.info("✅ 数据库初始化完成")
-    # TODO: 启动MQTT客户端
-    # TODO: 启动TCP Server
-    # TODO: 启动定时任务
+
+    # 启动 TDengine 连接
+    from app.services.tdengine_service import get_tdengine_service
+    tdengine = get_tdengine_service()
+    tdengine.connect()
+    logger.info("✅ TDengine 连接完成")
+
+    # 启动 MQTT 客户端
+    import asyncio
+    from app.mqtt.client import get_mqtt_client
+    from app.services.mqtt_handler import handle_mqtt_message
+
+    mqtt_client = get_mqtt_client()
+    mqtt_client.set_on_message_callback(handle_mqtt_message)
+    mqtt_client.start(asyncio.get_event_loop())
+    logger.info("✅ MQTT客户端已启动")
+
+    # 启动 TCP 服务器
+    from app.tcp.server import get_tcp_server
+    from app.services.tcp_handler import handle_tcp_data
+
+    tcp_server = get_tcp_server()
+    tcp_server.set_on_data_callback(handle_tcp_data)
+    await tcp_server.start()
+    logger.info("✅ TCP服务器已启动")
+
+    # 启动定时任务调度器
+    from app.services.scheduler import start_scheduler
+    start_scheduler()
+    logger.info("✅ 定时任务调度器已启动")
+
+    logger.info(f"🎉 {settings.SYSTEM_NAME} 启动完成")
+
     yield
+
+    # 关闭
     logger.info("🛑 应用关闭中...")
+
+    from app.services.scheduler import stop_scheduler
+    stop_scheduler()
+
+    tcp_server = get_tcp_server()
+    await tcp_server.stop()
+
+    mqtt_client = get_mqtt_client()
+    mqtt_client.stop()
+
+    tdengine.close()
     await close_db()
+
+    logger.info("✅ 应用已关闭")
 
 
 # 创建应用
@@ -84,6 +132,7 @@ async def not_found_handler(request: Request, exc):
 
 # 注册路由
 app.include_router(api_router)
+app.include_router(ws_router)
 
 
 # 健康检查
