@@ -31,7 +31,14 @@ class ProtocolParser:
         Returns:
             解析结果字典
         """
-        raw_bytes = bytes.fromhex(hex_data.replace(" ", "").replace("\n", ""))
+        raw_hex_clean = hex_data.replace(" ", "").replace("\n", "")
+        # 校验十六进制字符串
+        if not raw_hex_clean or len(raw_hex_clean) % 2 != 0:
+            raise ValueError(f"无效的十六进制数据: 长度 {len(raw_hex_clean)}")
+        try:
+            raw_bytes = bytes.fromhex(raw_hex_clean)
+        except ValueError:
+            raise ValueError(f"十六进制数据包含非法字符: {raw_hex_clean[:50]}...")
 
         dispatch = {
             "fixed_offset": self._parse_fixed_offset,

@@ -13,11 +13,29 @@ from app.models.data_point import DataPoint, DataItem
 from app.services.protocol_parser import ProtocolParser
 from app.services.data_validator import get_validator
 from app.services.tdengine_service import get_tdengine_service
-from app.services.alarm_engine import get_alarm_engine
-from app.api.v1.websocket import get_ws_manager
 from sqlalchemy import select
 
 logger = logging.getLogger("industrial-monitor.mqtt_handler")
+
+# 延迟导入避免循环依赖
+_ws_manager = None
+_alarm_engine = None
+
+
+def _get_ws_manager():
+    global _ws_manager
+    if _ws_manager is None:
+        from app.api.v1.websocket import get_ws_manager
+        _ws_manager = get_ws_manager()
+    return _ws_manager
+
+
+def _get_alarm_engine():
+    global _alarm_engine
+    if _alarm_engine is None:
+        from app.services.alarm_engine import get_alarm_engine
+        _alarm_engine = get_alarm_engine()
+    return _alarm_engine
 
 
 async def handle_mqtt_message(topic: str, payload: dict):
@@ -64,7 +82,7 @@ async def _handle_device_data(device_code: str, payload: dict):
         if device.status == "offline":
             device.status = "online"
             # 自动解除离线告警
-            alarm_engine = get_alarm_engine()
+            alarm_engine = _get_alarm_engine()
             dp_result = await db.execute(
                 select(DataPoint.id).where(DataPoint.device_id == device.id)
             )
@@ -100,8 +118,8 @@ async def _process_data_items(db, device: Device, payload: dict):
     """处理数据项"""
     tdengine = get_tdengine_service()
     validator = get_validator()
-    alarm_engine = get_alarm_engine()
-    ws_manager = get_ws_manager()
+    alarm_engine = _get_alarm_engine()
+    ws_manager = _get_ws_manager()
 
     # 查找设备关联的所有数据点
     dp_result = await db.execute(
@@ -202,7 +220,7 @@ async def _handle_heartbeat(device_code: str, payload: dict):
         # 设备从离线恢复
         if device.status == "offline":
             device.status = "online"
-            alarm_engine = get_alarm_engine()
+            alarm_engine = _get_alarm_engine()
             dp_result = await db.execute(
                 select(DataPoint.id).where(DataPoint.device_id == device.id)
             )

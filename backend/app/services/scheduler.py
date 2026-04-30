@@ -36,13 +36,13 @@ async def heartbeat_check():
 
     try:
         async with async_session() as db:
-            # 找到心跳超时的在线设备
+            # 找到心跳超时的在线设备（last_heartbeat 为 None 也视为异常）
             cutoff = datetime.now(timezone.utc) - HEARTBEAT_TIMEOUT
             result = await db.execute(
                 select(Device).where(
                     and_(
                         Device.status == "online",
-                        Device.last_heartbeat < cutoff,
+                        (Device.last_heartbeat < cutoff) | (Device.last_heartbeat.is_(None)),
                     )
                 )
             )

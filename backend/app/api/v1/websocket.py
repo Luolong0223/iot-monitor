@@ -66,12 +66,15 @@ class ConnectionManager:
         message = {"type": "data_update", "point_id": point_id, "data": data}
         disconnected = []
 
-        for user_id, conn in self._connections.items():
-            if point_id in conn["subscribed_points"]:
-                try:
-                    await conn["ws"].send_json(message)
-                except Exception:
-                    disconnected.append(user_id)
+        # 拷贝一份 keys 避免遍历时修改字典
+        for user_id in list(self._connections.keys()):
+            conn = self._connections.get(user_id)
+            if not conn or point_id not in conn["subscribed_points"]:
+                continue
+            try:
+                await conn["ws"].send_json(message)
+            except Exception:
+                disconnected.append(user_id)
 
         for uid in disconnected:
             await self.disconnect(uid)
@@ -81,7 +84,10 @@ class ConnectionManager:
         message = {"type": "alarm", "data": alarm_data}
         disconnected = []
 
-        for user_id, conn in self._connections.items():
+        for user_id in list(self._connections.keys()):
+            conn = self._connections.get(user_id)
+            if not conn:
+                continue
             try:
                 await conn["ws"].send_json(message)
             except Exception:

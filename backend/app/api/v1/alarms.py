@@ -1,6 +1,6 @@
 """告警管理API"""
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -268,16 +268,13 @@ async def list_alarm_notifications(
     ])
 
 
-def _parse_dt(dt_str: Optional[str]) -> datetime:
+def _parse_dt(dt_str: Optional[str], default_days: int = 30) -> datetime:
     """解析日期时间"""
     if not dt_str:
-        return datetime.now(timezone.utc) - timedelta(days=30)
+        return datetime.now(timezone.utc) - timedelta(days=default_days)
     try:
         if dt_str.endswith("Z"):
             dt_str = dt_str[:-1] + "+00:00"
         return datetime.fromisoformat(dt_str)
     except ValueError:
-        return datetime.now(timezone.utc)
-
-
-from datetime import timedelta
+        return datetime.now(timezone.utc) - timedelta(days=default_days)

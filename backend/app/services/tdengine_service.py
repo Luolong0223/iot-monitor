@@ -88,15 +88,21 @@ class TDengineService:
         """)
         cursor.close()
 
+    def _sanitize_tag(value: str) -> str:
+        """清理 TAG 值，防止 SQL 注入"""
+        return value.replace("'", "\\'").replace("\\", "\\\\")[:64]
+
     def ensure_sub_table(self, point_id: int, item_id: int, item_code: str, point_code: str):
         """确保子表存在"""
         table_name = f"d_{point_id}_{item_id}"
+        safe_code = self._sanitize_tag(item_code)
+        safe_point = self._sanitize_tag(point_code)
         try:
             cursor = self._conn.cursor()
             cursor.execute(f"USE {self._db_name}")
             cursor.execute(
                 f"CREATE TABLE IF NOT EXISTS {table_name} USING sensor_data "
-                f"TAGS ({point_id}, {item_id}, '{item_code}', '{point_code}')"
+                f"TAGS ({point_id}, {item_id}, '{safe_code}', '{safe_point}')"
             )
             cursor.close()
         except Exception as e:

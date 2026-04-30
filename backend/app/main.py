@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
 
     mqtt_client = get_mqtt_client()
     mqtt_client.set_on_message_callback(handle_mqtt_message)
-    mqtt_client.start(asyncio.get_event_loop())
+    mqtt_client.start(asyncio.get_running_loop())
     logger.info("✅ MQTT客户端已启动")
 
     # 启动 TCP 服务器
@@ -101,6 +101,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# 请求频率限制
+from app.middleware.rate_limit import rate_limit_middleware
+app.middleware("http")(rate_limit_middleware)
 
 # 请求耗时中间件
 @app.middleware("http")
