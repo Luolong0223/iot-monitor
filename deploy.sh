@@ -56,7 +56,12 @@ check_os() {
     ok "系统检查通过"
 }
 
-# ============ 1. 系统基础 + Docker ============
+# ============ 容器运行时（兼容 Docker/Podman） ============
+# CentOS Stream 10 自带 podman，docker 命令是 podman 的别名
+# 统一使用 podman 命令，语法与 docker 完全兼容
+CONTAINER_CMD="podman"
+
+# ============ 1. 系统基础 ============
 setup_system() {
     info "配置系统基础环境..."
 
@@ -64,18 +69,16 @@ setup_system() {
     dnf install -y -q wget curl git vim tar gcc gcc-c++ make \
         epel-release yum-utils policycoreutils-python-utils 2>/dev/null || true
 
-    # 安装 Docker
-    if ! command -v docker &>/dev/null; then
-        info "安装 Docker..."
-        dnf install -y -q dnf-plugins-core 2>/dev/null || true
-        dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo 2>/dev/null || true
-        dnf install -y -q docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null || \
-            dnf install -y -q docker docker-compose 2>/dev/null || true
-        systemctl enable --now docker
-        ok "Docker 安装完成"
-    else
-        ok "Docker 已安装"
+    # 确保 podman 可用
+    if ! command -v podman &>/dev/null; then
+        dnf install -y -q podman
     fi
+    ok "容器运行时: $(${CONTAINER_CMD} --version)"
+
+    # 配置 podman（兼容 systemd 容器自动重启）
+    touch /etc/containers/nodocker 2>/dev/null || true
+    systemctl enable --now podman.socket 2>/dev/null || true
+    systemctl enable --now podman-restart 2>/dev/null || true
 
     # 防火墙
     if systemctl is-active --quiet firewalld; then
@@ -138,18 +141,18 @@ setup_tdengine() {
     info "安装 TDengine (Docker)..."
 
     # 启动 TDengine 容器
-    docker rm -f tdengine 2>/dev/null || true
-    docker run -d --name tdengine --restart always \
+    ${CONTAINER_CMD} rm -f tdengine 2>/dev/null || true
+    ${CONTAINER_CMD} run -d --name tdengine --restart=always \
         -p 6030:6030 -p 6041:6041 \
         -v tdengine_data:/var/lib/taos \
-        tdengine/tdengine:3
+        docker.io/tdengine/tdengine:3
 
     # 等待 TDengine 就绪
     info "等待 TDengine 启动..."
     sleep 8
 
     # 创建数据库
-    docker exec tdengine taos -s "CREATE DATABASE IF NOT EXISTS ${TDENGINE_DB} KEEP 365 DURATION 30 BUFFER 16 WAL_LEVEL 1 PRECISION 'ms';" || \
+    ${CONTAINER_CMD} exec tdengine taos -s "CREATE DATABASE IF NOT EXISTS ${TDENGINE_DB} KEEP 365 DURATION 30 BUFFER 16 WAL_LEVEL 1 PRECISION 'ms';" || \
         warn "TDengine 数据库创建失败，稍后由应用自动创建"
 
     ok "TDengine 安装完成 (Docker)"
@@ -159,14 +162,14 @@ setup_tdengine() {
 setup_redis() {
     info "安装 Redis (Docker)..."
 
-    docker rm -f redis 2>/dev/null || true
-    docker run -d --name redis --restart always \
+    ${CONTAINER_CMD} rm -f redis 2>/dev/null || true
+    ${CONTAINER_CMD} run -d --name redis --restart=always \
         -p 6379:6379 \
         -v redis_data:/data \
-        redis:7-alpine
+        docker.io/redis:7-alpine
 
     sleep 3
-    docker exec redis redis-cli ping | grep -q PONG || warn "Redis 启动异常"
+    ${CONTAINER_CMD} exec redis redis-cli ping | grep -q PONG || warn "Redis 启动异常"
 
     ok "Redis 安装完成 (Docker)"
 }
@@ -175,11 +178,11 @@ setup_redis() {
 setup_emqx() {
     info "安装 EMQX (Docker)..."
 
-    docker rm -f emqx 2>/dev/null || true
-    docker run -d --name emqx --restart always \
+    ${CONTAINER_CMD} rm -f emqx 2>/dev/null || true
+    ${CONTAINER_CMD} run -d --name emqx --restart=always \
         -p 1883:1883 -p 8083:8083 -p 8883:8883 -p 18083:18083 \
         -v emqx_data:/opt/emqx/data \
-        emqx/emqx:5
+        docker.io/emqx/emqx:5
 
     # 等待 EMQX 启动
     info "等待 EMQX 启动..."
@@ -326,8 +329,10 @@ setup_systemd() {
     cat > /etc/systemd/system/iot-monitor.service <<EOF
 [Unit]
 Description=IoT Monitor Backend
-After=network.target postgresql.service docker.service
-Wants=postgresql.service docker.service
+After=network.target postgresql.service
+    systemctl enable --now podman-restart 2>/dev/null || true
+Wants=postgresql.service
+    systemctl enable --now podman-restart 2>/dev/null || true
 
 [Service]
 Type=exec
@@ -428,7 +433,7 @@ start_services() {
     systemctl restart nginx
 
     # 确认 Docker 容器运行状态
-    docker start tdengine redis emqx 2>/dev/null || true
+    ${CONTAINER_CMD} start tdengine redis emqx 2>/dev/null || true
 
     ok "所有服务已启动"
 }
@@ -468,9 +473,9 @@ print_summary() {
     echo "     查看后端状态: systemctl status iot-monitor"
     echo "     查看后端日志: journalctl -u iot-monitor -f"
     echo "     重启后端:     systemctl restart iot-monitor"
-    echo "     Docker 容器:  docker ps"
-    echo "     查看 TDengine: docker logs tdengine"
-    echo "     查看 EMQX:    docker logs emqx"
+    echo "     Docker 容器:  ${CONTAINER_CMD} ps"
+    echo "     查看 TDengine: ${CONTAINER_CMD} logs tdengine"
+    echo "     查看 EMQX:    ${CONTAINER_CMD} logs emqx"
     echo ""
     echo "============================================================"
 }
